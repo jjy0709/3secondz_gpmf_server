@@ -46,7 +46,7 @@ providers = [
 onnx_session = onnxruntime.InferenceSession('models/supercombo_kl.onnx', sess_options, providers=providers)
 print(onnxruntime.get_device())
 print(onnx_session.get_providers())
-onnx_model = onnx.load('models/supercombo.onnx')
+# onnx_model = onnx.load('models/supercombo.onnx')
 # torch_model = ConvertModel(onnx_model, experimental=True)
 # print(torch_model)
 # torch_model.eval()
