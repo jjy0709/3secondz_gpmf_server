@@ -15,7 +15,10 @@ import cv2
 from common.tools.lib.parser import parser
 import cv2
 import sys
+import os
 camerafile = sys.argv[1]
+input = camerafile.replace('mp4','json')
+cmd = './gpmf-parser ' + camerafile + ' ' + input
 # supercombo = load_model('models/supercombo.keras')
 
 import onnxruntime
@@ -600,7 +603,6 @@ for i in tqdm(range(int(frame_len))):
   if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-input = sys.argv[1].replace(".mp4", ".json")
 filename = sys.argv[1].replace("gpmf.mp4", "result.json")
 
 with open(input,'r') as g:
@@ -620,12 +622,12 @@ j=0
 k=0
 for i2 in range(0, len(accl_data['Time data'])):
   gpmf_time = accl_data['Time data'][i2]
-  if(k==len(gps_data['Time data'])-1):
-      k=k
-  elif(gpmf_time > gps_data['Time data'][k+1]):
-      k = k + 1
-      if(k==len(gps_data['Time data'])):
-          k = k - 1
+  #if(k==len(gps_data['Time data'])-1):
+  #    k=k
+  #elif(gpmf_time > gps_data['Time data'][k+1]):
+  #    k = k + 1
+  #    if(k==len(gps_data['Time data'])):
+  #        k = k - 1
   if(j==len(timesave)-1):
       j=j
   elif(gpmf_time > timesave[j+1]*1000):
