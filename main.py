@@ -19,6 +19,7 @@ import os
 camerafile = sys.argv[1]
 input = camerafile.replace('mp4','json')
 cmd = './gpmf-parser ' + camerafile + ' ' + input
+os.system(cmd)
 # supercombo = load_model('models/supercombo.keras')
 
 import onnxruntime
