@@ -17,7 +17,7 @@ import cv2
 import sys
 import os
 camerafile = sys.argv[1]
-input = camerafile.replace('mp4','json')
+input = sys.argv[1].replace(".mp4", ".json")
 cmd = './gpmf-parser ' + camerafile + ' ' + input
 os.system(cmd)
 # supercombo = load_model('models/supercombo.keras')
@@ -257,17 +257,22 @@ def lanexyzt(data, startindex):
   # curdata = data[startindex:]
   # probdata = data[LL_PROB_IDX-LL_IDX + startindex:]
   prob_idx = (startindex - LL_IDX)//66
-  std_idx = startindex + 66*4
+  if(prob_idx >4):
+    std_idx = startindex + 66*2
+  else:
+    std_idx = startindex + 66*4
   outdict = {}
   outdict['x'] = X_IDX
   outdict['y'] = []
   outdict['std_y'] = []
   outdict['prob'] = []
-  outdict['std_y'].append(np.exp(data[std_idx]))
-  outdict['prob'].append(1/(1+np.exp(-data[LL_PROB_IDX+prob_idx])))
+  #outdict['std_y'].append(np.exp(data[std_idx]))
+  #outdict['prob'].append(1/(1+np.exp(-data[LL_PROB_IDX+prob_idx])))
   for i in range(0,33):
     
     outdict['y'].append(data[startindex+i*2])
+    outdict['std_y'].append(np.exp(data[std_idx+i*2]))
+  outdict['prob'].append(1/(1+np.exp(-data[LL_PROB_IDX+prob_idx])))
   
   return outdict
 
@@ -339,7 +344,7 @@ traffic_convention = np.array([[0,0]]).astype(np.float32)
 
 cap = cv2.VideoCapture(camerafile)
 frame_len = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-
+frame_list = list()
 # fcount = 0
 # w = TARGET_WIDTH
 # h = TARGET_HEIGHT
@@ -349,7 +354,7 @@ frame_len = cap.get(cv2.CAP_PROP_FRAME_COUNT)
 # width = w
 # height = h
 # for i in tqdm(range(fcount - 1)):
-for i in tqdm(range(int(frame_len))):
+for i in tqdm(range(0,int(frame_len))):
   try:
     time = cap.get(cv2.CAP_PROP_POS_MSEC)
     ret, frame = cap.read()
@@ -374,6 +379,7 @@ for i in tqdm(range(int(frame_len))):
     # img_yuv = transform_img(img_yuv, from_intr=FLIR_INTRINSIC, to_intr=medmodel_intrinsics, yuv=True,
     #                                 output_size=(512,256),augment_eulers=np.array([0.025,0.07,0.0]))
     frame_tensors = frames_to_tensor(np.array([img_yuv])).astype(np.float32)
+    frame_list.append(dict(frame=frame_tensors, time=time))
     # print(datetime.now())
     
   except:
@@ -386,12 +392,17 @@ for i in tqdm(range(int(frame_len))):
   # img_yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
   # inputs = [np.vstack(frame_tensors,frame_tensors_prev)[None], desire, state]
   # print(frame_tensors.shape)
-  if i == 0:
-    frame_tensors_prev = frame_tensors
-    continue
-  
+#   if i == 0:
+#     frame_tensors_prev = frame_tensors
+#     continue
+frame_tensors = frame_list[0]['frame']
+frame_tensors_prev = frame_tensors
+
+for i in tqdm(range(0,len(frame_list))):
+  frame_tensors = frame_list[i]['frame']
   input_dict = {'input_imgs':np.vstack([frame_tensors_prev[0],frame_tensors[0]])[None], 'desire':desire, 'initial_state':state, 'traffic_convention':traffic_convention}
   frame_tensors_prev = frame_tensors
+  time = frame_list[i]['time']
   label_name = onnx_session.get_outputs()[0].name
   outs = onnx_session.run([label_name], input_dict)
   outarray = outs[0][0]
@@ -466,15 +477,17 @@ for i in tqdm(range(int(frame_len))):
     rprobsave = np.vstack((rprobsave, r['prob']))
     rrprobsave = np.vstack((rrprobsave, rr['prob']))
     llysave = np.vstack((llysave, ll['y']))
-    # llxsave = np.vstack((llxsave, ll['x']))
+   # llxsave = np.vstack((llxsave, ll['x']))
     lysave = np.vstack((lysave, l['y']))
-    # lxsave = np.vstack((lxsave, l['x']))
+   # lxsave = np.vstack((lxsave, l['x']))
     rysave = np.vstack((rysave, r['y']))
-    # rxsave = np.vstack((rxsave, r['x']))
+   # rxsave = np.vstack((rxsave, r['x']))
     rrysave = np.vstack((rrysave, rr['y']))
-    # rrxsave = np.vstack((rrxsave, rr['x']))
+   # rrxsave = np.vstack((rrxsave, rr['x']))
     lesave = np.vstack((lesave, le['y']))
+    lestdsave = np.vstack((lestdsave, le['std_y']))
     resave = np.vstack((resave, re['y']))
+    restdsave = np.vstack((restdsave, re['std_y']))
     posesave = np.vstack((posesave, pose))
     timesave = np.vstack((timesave, time))
   except:
@@ -496,7 +509,9 @@ for i in tqdm(range(int(frame_len))):
     # rrxsave = rr['x']
     posesave = pose
     resave = re['y']
+    restdsave = re['std_y']
     lesave = le['y']
+    lestdsave = le['std_y']
     timesave = time
   # ret, frame = cap.read()
   # h, w, c = frame.shape
@@ -604,7 +619,7 @@ for i in tqdm(range(int(frame_len))):
   if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-filename = sys.argv[1].replace("gpmf.mp4", "result.json")
+filename = camerafile.replace("gpmf.mp4","result.json")
 
 with open(input,'r') as g:
   gpmf = json.load(g)
@@ -618,33 +633,38 @@ video_metadata = dict(Video_metadata=gpmf['Video metadata'])
 camera_intrinsics = dict(Camera_Intrinsics=gpmf['Camera Intrinsics'])
 result_data.append(video_metadata)
 result_data.append(camera_intrinsics)
+result_data.append(dict(X_IDX=X_IDX))
 
 j=0
 k=0
 for i2 in range(0, len(accl_data['Time data'])):
   gpmf_time = accl_data['Time data'][i2]
-  #if(k==len(gps_data['Time data'])-1):
-  #    k=k
-  #elif(gpmf_time > gps_data['Time data'][k+1]):
-  #    k = k + 1
-  #    if(k==len(gps_data['Time data'])):
-  #        k = k - 1
+  if(len(gps_data['Time data']) != 0):
+    if(k==len(gps_data['Time data'])-1):
+        k=k
+    else:
+        while(gpmf_time > gps_data['Time data'][k+1]):
+            k = k + 1
+            if(k==len(gps_data['Time data'])-1):
+                break
   if(j==len(timesave)-1):
-      j=j
-  elif(gpmf_time > timesave[j+1]*1000):
-      j = j + 1
-      if(j==len(timesave)):
-          j = j - 1
+    j=j
+  else:
+      while(gpmf_time > timesave[j+1]*1000):
+        j = j + 1
+        if(j==len(timesave)-1):
+            break
   
   #gps data
   gpmf_data = dict()
   gpmf_data['Time'] = gpmf_time
-  # gpmf_data['GPS Time'] = gps_data['Time data'][k]
-  # gpmf_data['GPS Latitude'] = gps_data['Latitude data'][k]
-  # gpmf_data['GPS Longitude'] = gps_data['Longitude data'][k]
-  # gpmf_data['GPS Altitude'] = gps_data['Altitude data'][k]
-  # gpmf_data['GPS 2d speed'] = gps_data['2d speed data'][k]
-  # gpmf_data['GPS Bearing'] = gps_data['Bearing data'][k]
+  if(len(gps_data['Time data']) != 0):
+    gpmf_data['GPS Time'] = gps_data['Time data'][k]
+    gpmf_data['GPS Latitude'] = gps_data['Latitude data'][k]
+    gpmf_data['GPS Longitude'] = gps_data['Longitude data'][k]
+    gpmf_data['GPS Altitude'] = gps_data['Altitude data'][k]
+    gpmf_data['GPS 2d speed'] = gps_data['2d speed data'][k]
+    gpmf_data['GPS Bearing'] = gps_data['Bearing data'][k]
   #accl data
   gpmf_data['ACCL x'] = accl_data['Accl x data'][i2]
   gpmf_data['ACCL y'] = accl_data['Accl y data'][i2]
@@ -669,7 +689,9 @@ for i2 in range(0, len(accl_data['Time data'])):
   gpmf_data['rrstd'] = rrystdsave[j].tolist()
   gpmf_data['rrprob'] = rrprobsave[j].tolist()
   gpmf_data['rey'] = resave[j].tolist()
+  gpmf_data['restd'] = restdsave[j].tolist()
   gpmf_data['ley'] = lesave[j].tolist()
+  gpmf_data['lestd'] = lestdsave[j].tolist()
   gpmf_data['pose'] = posesave[j].tolist()
   result_data.append(gpmf_data)
 json.dump(result_data, f, indent=4)
@@ -683,13 +705,13 @@ f.close()
 # np.savetxt("rstd.csv", rystdsave, delimiter=",")
 # np.savetxt("lstd.csv", lystdsave, delimiter=",")
 # np.savetxt("llstd.csv", llystdsave, delimiter=",")
-# # np.savetxt("llx.csv", llxsave, delimiter=",")
+#np.savetxt("llx.csv", llxsave, delimiter=",")
 # np.savetxt("lly.csv", llysave, delimiter=",")
-# # np.savetxt("lx.csv", lxsave, delimiter=",")
+#np.savetxt("lx.csv", lxsave, delimiter=",")
 # np.savetxt("ly.csv", lysave, delimiter=",")
-# # np.savetxt("rx.csv", rxsave, delimiter=",")
+#np.savetxt("rx.csv", rxsave, delimiter=",")
 # np.savetxt("ry.csv", rysave, delimiter=",")
-# # np.savetxt("rrx.csv", rrxsave, delimiter=",")
+#np.savetxt("rrx.csv", rrxsave, delimiter=",")
 # np.savetxt("rry.csv", rrysave, delimiter=",")
 # np.savetxt("rey.csv", resave, delimiter=",")
 # np.savetxt("ley.csv", lesave, delimiter=",")
